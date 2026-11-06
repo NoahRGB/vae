@@ -76,11 +76,11 @@ def train(epochs, batch_size, data, model, optim, device):
     return recon_losses, kl_losses 
 
 BATCH_SIZE = 128
-LATENT_DIM = 2 
+LATENT_DIM = 30 
 LR = 0.001
-EPOCHS = 100 
-DEVICE = "cuda"
-SAVE_PLOTS = False
+EPOCHS = 100
+DEVICE = "cpu" # cuda"
+SAVE_PLOTS = True 
 
 train_ds = datasets.MNIST(root="data", train=True, download=True, transform=v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]))
 test_ds = datasets.MNIST(root="data", train=False, download=True, transform=v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]))
@@ -120,7 +120,7 @@ axs[1].plot(ae_kl_losses, label="AE KL")
 axs[0].legend()
 axs[1].legend()
 fig.suptitle(f"batch size = {BATCH_SIZE}, epochs={EPOCHS}, lr={LR}, Nz={LATENT_DIM}, training samples={training_samples}")
-if SAVE_PLOTS: plt.savefig("losses.png", dpi=500, bbox_inches="tight")
+if SAVE_PLOTS: plt.savefig("plots/losses.png", dpi=500, bbox_inches="tight")
 plt.show()
 
 
@@ -151,23 +151,38 @@ with torch.no_grad():
     axs[1, 0].set_ylabel("VAE decoded")
     axs[2, 0].set_ylabel("AE decoded")
     fig.suptitle(f"batch size = {BATCH_SIZE}, epochs={EPOCHS}, lr={LR}, Nz={LATENT_DIM}, training samples={training_samples}")
-    if SAVE_PLOTS: plt.savefig("recons.png", dpi=500, bbox_inches="tight")
+    if SAVE_PLOTS: plt.savefig("plots/recons.png", dpi=500, bbox_inches="tight")
     plt.show()
 
 
 
-# with a Nz=2, latent space can be plotted as X/Y in a scatterplot
+# plot latent space as X/Y scatterplot (if Nz > 2, project onto top 2 principal components)
+def pca_2d(z):
+    """project (N, D) latents onto their top 2 principal components"""
+    z = z - z.mean(0)
+    _, S, Vh = torch.linalg.svd(z, full_matrices=False)
+    explained = (S**2 / (S**2).sum())[:2]
+    return z @ Vh[:2].T, explained
+
 with torch.no_grad():
     mu_vae = vae.encode(torch.bernoulli(X_test)).mean.cpu()
     z_ae = ae.encode(torch.bernoulli(X_test)).cpu()
 
 fig, axs = plt.subplots(1, 2, figsize=(13, 5))
 for ax, z, name in [(axs[0], mu_vae, "VAE"), (axs[1], z_ae, "AE")]:
+
+    # if Nz > 2, do PCA to get 2 dims
+    # otherwise just plot z1/z2 as X/Y
+    if LATENT_DIM > 2:
+        z, ev = pca_2d(z)
+        ax.set_xlabel(f"PC1 ({ev[0]:.0%} var)"); ax.set_ylabel(f"PC2 ({ev[1]:.0%} var)")
+    else:
+        ax.set_xlabel("z1"); ax.set_ylabel("z2")
+
     sc = ax.scatter(z[:, 0], z[:, 1], c=y_test, cmap="tab10", s=2, alpha=0.6)
     ax.set_title(name)
-    ax.set_xlabel("z1"); ax.set_ylabel("z2")
     fig.colorbar(sc, ax=ax, ticks=range(10))
 plt.tight_layout()
 fig.suptitle(f"batch size = {BATCH_SIZE}, epochs={EPOCHS}, lr={LR}, Nz={LATENT_DIM}, training samples={training_samples}", y=1.02)
-if SAVE_PLOTS: plt.savefig("2dim_plot.png", dpi=500, bbox_inches="tight")
+if SAVE_PLOTS: plt.savefig("plots/2dim_plot.png", dpi=500, bbox_inches="tight")
 plt.show()
